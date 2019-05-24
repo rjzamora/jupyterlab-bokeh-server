@@ -151,6 +151,7 @@ try:
         "/GPU-Utilization": nvml_apps.gpu,
         "/GPU-Resources": nvml_apps.gpu_resource_timeline,
         "/PCI-Throughput": nvml_apps.pci,
+        "/NvLink-Utilization": nvml_apps.nvlink,
     }
 except:
     routes = {

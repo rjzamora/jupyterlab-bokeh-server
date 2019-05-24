@@ -71,6 +71,52 @@ def pci(doc):
 
     doc.add_periodic_callback(cb, 200)
 
+def nvlink(doc):
+
+    counter = 0; control = 1; reset = 1;
+    nlinks = pynvml.NVML_NVLINK_MAX_LINKS
+    def _reset():
+        for i in range(ngpus):
+            for j in range(nlinks):
+                pynvml.nvmlDeviceSetNvLinkUtilizationControl(gpu_handles[i], j, counter, control, reset)
+    _reset()
+
+    tx_fig = figure(title="TX Count", sizing_mode="stretch_both", y_range=[0, 10000])
+    count_tx = [ sum([pynvml.nvmlDeviceGetNvLinkUtilizationCounter( gpu_handles[i], j,  counter )['tx']/1024 for j in range(nlinks)]) for i in range(ngpus) ]
+    left = list(range(len(count_tx)))
+    right = [l + 0.8 for l in left]
+    source = ColumnDataSource({"left": left, "right": right, "count-tx": count_tx})
+    mapper = LinearColorMapper(palette=all_palettes['RdYlBu'][4], low=0, high=10000)
+
+    tx_fig.quad(
+        source=source, left="left", right="right", bottom=0, top="count-tx", color={"field": "count-tx", "transform": mapper}
+    )
+
+    rx_fig = figure(title="RX Count", sizing_mode="stretch_both", y_range=[0, 10000])
+    count_rx = [ sum([pynvml.nvmlDeviceGetNvLinkUtilizationCounter( gpu_handles[i], j,  counter )['rx']/1024 for j in range(nlinks)]) for i in range(ngpus) ]
+    left = list(range(len(count_rx)))
+    right = [l + 0.8 for l in left]
+    source = ColumnDataSource({"left": left, "right": right, "count-rx": count_rx})
+    mapper = LinearColorMapper(palette=all_palettes['RdYlBu'][4], low=0, high=10000)
+
+    rx_fig.quad(
+        source=source, left="left", right="right", bottom=0, top="count-rx", color={"field": "count-rx", "transform": mapper}
+    )
+
+    doc.title = "NvLink Utilization Counters"
+    doc.add_root(
+        column(tx_fig, rx_fig, sizing_mode="stretch_both")
+    )
+
+    def cb():
+        src_dict = {}
+        _reset()
+        src_dict["count-tx"] = [ sum([pynvml.nvmlDeviceGetNvLinkUtilizationCounter( gpu_handles[i], j,  counter )['tx']/1024 for j in range(nlinks)]) for i in range(ngpus) ]
+        src_dict["count-rx"] = [ sum([pynvml.nvmlDeviceGetNvLinkUtilizationCounter( gpu_handles[i], j,  counter )['rx']/1024 for j in range(nlinks)]) for i in range(ngpus) ]
+        source.data.update(src_dict)
+
+    doc.add_periodic_callback(cb, 1000)
+
 def gpu_resource_timeline(doc):
 
     memory_list = [ pynvml.nvmlDeviceGetMemoryInfo( handle ).total / (1024*1024) for handle in gpu_handles ]
