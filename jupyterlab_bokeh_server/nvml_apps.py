@@ -6,7 +6,7 @@ from bokeh.models.mappers import LinearColorMapper
 from bokeh.palettes import all_palettes
 
 import time
-
+import os
 import pynvml
 
 pynvml.nvmlInit()
@@ -73,31 +73,37 @@ def pci(doc):
 
 def nvlink(doc):
 
-    counter = 0; control = 1; reset = 1;
+    mult = 5. / 1000000.
+    max_bw = 10000.
     nlinks = pynvml.NVML_NVLINK_MAX_LINKS
+    counter = 0
+    # nvmlDeviceSetNvLinkUtilizationControl seems limited, using smi:
+    os.system('nvidia-smi nvlink --setcontrol '+str(counter)+'bz') # Get output in bytes
     def _reset():
         for i in range(ngpus):
             for j in range(nlinks):
-                pynvml.nvmlDeviceSetNvLinkUtilizationControl(gpu_handles[i], j, counter, control, reset)
+                pynvml.nvmlDeviceResetNvLinkUtilizationCounter(gpu_handles[i], j, counter)
     _reset()
 
-    tx_fig = figure(title="TX Count", sizing_mode="stretch_both", y_range=[0, 10000])
-    count_tx = [ sum([pynvml.nvmlDeviceGetNvLinkUtilizationCounter( gpu_handles[i], j,  counter )['tx']/1024 for j in range(nlinks)]) for i in range(ngpus) ]
+    tx_fig = figure(title="TX NvLink Bandwidth [GB/s]", sizing_mode="stretch_both", y_range=[0, max_bw])
+    count_tx = [ sum([pynvml.nvmlDeviceGetNvLinkUtilizationCounter( gpu_handles[i], j,  counter )['tx'] * mult for j in range(nlinks)]) for i in range(ngpus) ]
     left = list(range(len(count_tx)))
     right = [l + 0.8 for l in left]
     source = ColumnDataSource({"left": left, "right": right, "count-tx": count_tx})
-    mapper = LinearColorMapper(palette=all_palettes['RdYlBu'][4], low=0, high=10000)
+    mapper = LinearColorMapper(palette=all_palettes['RdYlBu'][4], low=0, high=max_bw)
 
     tx_fig.quad(
         source=source, left="left", right="right", bottom=0, top="count-tx", color={"field": "count-tx", "transform": mapper}
     )
 
-    rx_fig = figure(title="RX Count", sizing_mode="stretch_both", y_range=[0, 10000])
-    count_rx = [ sum([pynvml.nvmlDeviceGetNvLinkUtilizationCounter( gpu_handles[i], j,  counter )['rx']/1024 for j in range(nlinks)]) for i in range(ngpus) ]
+    rx_fig = figure(title="RX NvLink Bandwidth [GB/s]", sizing_mode="stretch_both", y_range=[0, max_bw])
+    count_rx = [ sum([pynvml.nvmlDeviceGetNvLinkUtilizationCounter( gpu_handles[i], j,  counter )['rx'] * mult for j in range(nlinks)]) for i in range(ngpus) ]
     left = list(range(len(count_rx)))
     right = [l + 0.8 for l in left]
     source = ColumnDataSource({"left": left, "right": right, "count-rx": count_rx})
-    mapper = LinearColorMapper(palette=all_palettes['RdYlBu'][4], low=0, high=10000)
+    mapper = LinearColorMapper(palette=all_palettes['RdYlBu'][4], low=0, high=max_bw)
+
+    print(pynvml.nvmlDeviceGetNvLinkUtilizationCounter( gpu_handles[0], 0,  counter ))
 
     rx_fig.quad(
         source=source, left="left", right="right", bottom=0, top="count-rx", color={"field": "count-rx", "transform": mapper}
@@ -107,15 +113,16 @@ def nvlink(doc):
     doc.add_root(
         column(tx_fig, rx_fig, sizing_mode="stretch_both")
     )
+    _reset()
 
     def cb():
         src_dict = {}
-        _reset()
-        src_dict["count-tx"] = [ sum([pynvml.nvmlDeviceGetNvLinkUtilizationCounter( gpu_handles[i], j,  counter )['tx']/1024 for j in range(nlinks)]) for i in range(ngpus) ]
-        src_dict["count-rx"] = [ sum([pynvml.nvmlDeviceGetNvLinkUtilizationCounter( gpu_handles[i], j,  counter )['rx']/1024 for j in range(nlinks)]) for i in range(ngpus) ]
+        src_dict["count-tx"] = [ sum([pynvml.nvmlDeviceGetNvLinkUtilizationCounter( gpu_handles[i], j,  counter )['tx'] * mult for j in range(nlinks)]) for i in range(ngpus) ]
+        src_dict["count-rx"] = [ sum([pynvml.nvmlDeviceGetNvLinkUtilizationCounter( gpu_handles[i], j,  counter )['rx'] * mult for j in range(nlinks)]) for i in range(ngpus) ]
         source.data.update(src_dict)
+        _reset()
 
-    doc.add_periodic_callback(cb, 1000)
+    doc.add_periodic_callback(cb, 200)
 
 def gpu_resource_timeline(doc):
 
